@@ -279,4 +279,56 @@ final class EffectTests: XCTestCase {
       _ = XCTWaiter.wait(for: [.init()], timeout: 1.1)
     }
   #endif
+
+  @MainActor
+  func testEffectTask() async {
+    struct State: Equatable {
+      var value: Int
+    }
+    enum Action: Equatable {
+      case buttonTapped
+      case response(Int)
+    }
+    struct RandomNumberClient {
+      var fetch: () async -> Int
+    }
+    struct Environment {
+      var randomNumber: RandomNumberClient
+    }
+    let reducer = Reducer<State, Action, Environment> { state, action, environment in
+      switch action {
+      case .buttonTapped:
+        state.value = 0
+        return .task { @MainActor in
+          await .response(environment.randomNumber.fetch() )
+        }
+
+      case let .response(int):
+        state.value = int
+        return .none
+      }
+    }
+
+    let store = TestStore(
+      initialState: .init(value: 1),
+      reducer: reducer,
+      environment: .init(
+        randomNumber: .init(
+          fetch: {
+            42
+          }
+        )
+      )
+    )
+
+    store.send(.buttonTapped) {
+      $0.value = 0
+    }
+
+//    await Task.yield()
+
+    await store.receive(.response(42)) {
+      $0.value = 42
+    }
+  }
 }
